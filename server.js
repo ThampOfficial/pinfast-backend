@@ -7,8 +7,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ⚠️ ใส่เบอร์โทรศัพท์ที่ผูก PromptPay หรือเลขประจำตัวผู้เสียภาษี (13 หลัก) ของคุณตรงนี้
-const PROMPTPAY_ACCOUNT = '0813999389'; 
+// ⚠️ ใส่เบอร์ PromptPay (เช่น '0812345678') หรือ เลขประจำตัวประชาชน/เลขผู้เสียภาษี 13 หลัก ของคุณตรงนี้
+const PROMPTPAY_ACCOUNT = '0813999389';
 
 const PRODUCTS = [
   { id: 1, name: 'Razer Gold PIN', price: 95 },
@@ -17,6 +17,7 @@ const PRODUCTS = [
   { id: 4, name: 'ROBLOX Gift Card', price: 340 }
 ];
 
+// คลัง e-PIN จำลอง
 let STOCK_CODES = [
   { id: 101, productId: 1, serial: 'RZ-2026-0001X', pin: '8841-9920-1123', status: 'AVAILABLE' },
   { id: 102, productId: 1, serial: 'RZ-2026-0002X', pin: '7741-5520-4412', status: 'AVAILABLE' },
@@ -45,10 +46,13 @@ app.post('/api/orders/create', async (req, res) => {
     }
 
     const orderRef = 'PF-' + Date.now();
-    const amount = product.price;
+    const amount = Number(product.price);
+
+    // ทำความสะอาดเลข PromptPay (ตัดขีดและเว้นวรรคออก)
+    const sanitizedAccount = PROMPTPAY_ACCOUNT.replace(/[^0-9]/g, '');
 
     // 1. สร้าง PromptPay Payload ตามมาตรฐาน EMVCo
-    const payload = generatePayload(PROMPTPAY_ACCOUNT, { amount });
+    const payload = generatePayload(sanitizedAccount, { amount });
 
     // 2. แปลง Payload เป็น Image Data URL (Base64)
     const qrImageBase64 = await QRCode.toDataURL(payload, {
@@ -72,15 +76,16 @@ app.post('/api/orders/create', async (req, res) => {
       success: true,
       orderRef,
       amount,
-      qrImage: qrImageBase64, // ส่งรูป QR Code สแกนได้จริงกลับไปที่ Frontend
+      qrImage: qrImageBase64,
       message: 'สร้างออเดอร์สำเร็จ'
     });
   } catch (err) {
-    console.error(err);
+    console.error('QR Generation Error:', err);
     res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาดในการสร้าง QR Code' });
   }
 });
 
+// API รับ Webhook จำลองชำระเงินสำเร็จ
 app.post('/api/payment/webhook', (req, res) => {
   const { orderRef, status } = req.body;
   const order = ORDERS.find(o => o.orderRef === orderRef);
